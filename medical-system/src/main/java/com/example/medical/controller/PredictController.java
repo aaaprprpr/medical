@@ -1,4 +1,5 @@
 package com.example.medical.controller;
+
 import java.io.IOException;
 import java.util.Map;
 
@@ -13,29 +14,31 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
-
 @RestController
 @RequestMapping("/api")
-public class MockPredictController {
+public class PredictController {
     private final RestClient restClient;
-    
-    public MockPredictController(RestClient restClient) {
+
+    public PredictController(RestClient restClient) {
         this.restClient = restClient;
     }
 
-    @PostMapping(value = "/mock-predict", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Map<String, Object> mockPredict(@RequestPart("file") MultipartFile file) throws IOException {
-        ByteArrayResource fileResource = new ByteArrayResource(file.getBytes()) {
-            @Override
-            public String getFilename() {
-                return file.getOriginalFilename();
-            }
-        };
-
+    @PostMapping(value = "/predict", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Map<String, Object> predict(@RequestPart("files") MultipartFile[] files) throws IOException {
         MultipartBodyBuilder bodyBuilder = new MultipartBodyBuilder();
-        bodyBuilder.part("file", fileResource)
-                .filename(file.getOriginalFilename())
-                .contentType(MediaType.APPLICATION_OCTET_STREAM);
+        for (MultipartFile file : files) {
+            String filename = file.getOriginalFilename();
+            ByteArrayResource fileResource = new ByteArrayResource(file.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return filename;
+                }
+            };
+            bodyBuilder.part("files", fileResource)
+                    .filename(filename)
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM);
+
+        }
 
         MultiValueMap<String, org.springframework.http.HttpEntity<?>> body = bodyBuilder.build();
 
@@ -49,8 +52,7 @@ public class MockPredictController {
         return Map.of(
                 "code", 0,
                 "message", "success",
-                "data", pythonResult
-        );
+                "data", pythonResult);
     }
 
 }

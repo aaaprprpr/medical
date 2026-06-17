@@ -166,8 +166,10 @@ function handleDrop(event) {
 
 // 后端预测请求
 async function submitPredict() {
-    if (!selectedFile.value) {
-        errorMessage.value = '请先选择图片'
+    const imagesForPredict = [...cineImages.value, ...lgeImages.value]
+
+    if (imagesForPredict.length === 0) {
+        errorMessage.value = '请先选择病人文件夹'
         return
     }
 
@@ -175,10 +177,13 @@ async function submitPredict() {
     errorMessage.value = ''
     result.value = null
     const formData = new FormData()
-    formData.append('file', selectedFile.value)
+
+    for (const image of imagesForPredict) {
+        formData.append('files', image.file, image.path)
+    }
 
     try {
-        const response = await fetch('/api/mock-predict', {
+        const response = await fetch('/api/predict', {
             method: 'POST',
             body: formData
         })
@@ -193,7 +198,25 @@ async function submitPredict() {
         loading.value = false
     }
 }
+function formatResultLabel(resultValue) {
+    if (resultValue === 'mace_cine') {
+        return '患病'
+    }
 
+    if (resultValue === 'no_mace') {
+        return '不患病'
+    }
+
+    return resultValue || '未知'
+}
+
+function formatProbability(value) {
+    if (value === null || value === undefined || value === '') {
+        return '未知'
+    }
+
+    return Number(value).toFixed(4)
+}
 </script>
 
 
@@ -292,16 +315,15 @@ async function submitPredict() {
             <p class="file-name">当前文件夹：{{ patientName || '未选择' }}</p>
             <p>Cine 图片数：{{ cineImages.length }}</p>
             <p>LGE 图片数：{{ lgeImages.length }}</p>
-            <!-- <p>未匹配文件数：{{ unmatchedFiles.length }}</p> -->
 
-            <button @click="submitPredict" :disabled="loading || !selectedFile">
+            <button @click="submitPredict" :disabled="loading || (cineImages.length + lgeImages.length === 0)">
                 {{ loading ? '预测中...' : '开始测试' }}
             </button>
 
             <div v-if="result" class="result">
                 <h2>预测结果：</h2>
-                <p>判断：{{ result.result }}</p>
-                <p>置信度：{{ result.probability }}</p>
+                <p>判断：{{ formatResultLabel(result.result) }}</p>
+                <p>置信度：{{ formatProbability(result.probability) }}</p>
             </div>
             <p v-if="errorMessage" class="error">{{ errorMessage }} </p>
 
@@ -593,5 +615,4 @@ input {
     background: transparent;
     border-top: 1px solid #e5e7eb;
 }
-
 </style>
