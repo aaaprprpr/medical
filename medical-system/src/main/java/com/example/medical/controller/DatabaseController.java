@@ -7,11 +7,11 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 @RestController
-public class DatabaseTestController {
+public class DatabaseController {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public DatabaseTestController(JdbcTemplate jdbcTemplate) {
+    public DatabaseController(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
