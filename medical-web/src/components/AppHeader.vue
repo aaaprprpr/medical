@@ -7,7 +7,7 @@ const emit = defineEmits(['change-view'])
 
 const menus = [
     { key: 'test', label: '影像检测' },
-    { key: 'user', label: '患者信息' },
+    { key: 'patient', label: '患者信息' },
     { key: 'history', label: '检测记录' },
     { key: 'profile', label: '个人中心' }
 ]
