@@ -1,169 +1,152 @@
 # 架构说明
 
-## 1. 架构目标
+## 1. 总体架构
 
-系统采用本地前后端分离架构：
-
-```text
-Vue 前端
-  -> Spring Boot Java 后端
-      -> Python FastAPI 模型服务
-      -> 数据库
-```
-
-设计目标：
-
-- 前端负责页面、文件夹选择、图像预览和结果展示。
-- Java 后端负责对外 API、业务流程、数据保存和模型服务调用。
-- Python 服务只负责模型加载和模型推理。
-- 模型权重路径和模型内部细节不暴露给前端。
-
-## 2. 当前组件
-
-```text
-medical-web/
-  Vue + Vite 前端
-
-medical-system/
-  Spring Boot Java 后端
-
-python-api/
-  FastAPI 模型推理服务
-
-docs/
-  项目文档
-```
-
-## 3. 调用关系
+系统采用本地前后端分离结构：
 
 ```text
 浏览器
   |
-  | multipart/form-data, files[]
   v
-Java 后端 /api/predict
+Vue 前端 medical-web
   |
-  | multipart/form-data, files[]
+  | HTTP
   v
-Python 模型服务 /predict
-  |
-  | 返回模型结果
-  v
-Java 后端统一包装响应
-  |
-  v
-Vue 前端展示结果
+Spring Boot 后端 medical-system
+  |                 |
+  | HTTP            | JDBC
+  v                 v
+Python FastAPI      MySQL
+python-api          medical_system
 ```
 
-前端上传文件时必须保留相对路径：
+职责划分：
 
-```js
-formData.append('files', file, relativePath)
-```
+| 模块 | 职责 |
+| --- | --- |
+| Vue 前端 | 页面展示、文件夹选择、图像预览、收集搜索条件、调用 Java 后端 |
+| Java 后端 | 对外 API、业务流程编排、数据库访问、调用 Python 模型服务 |
+| Python 服务 | 加载模型、执行推理、返回预测结果 |
+| MySQL | 保存患者信息和后续检测记录 |
 
-Java 转发给 Python 时也必须保留该相对路径：
-
-```java
-.filename(file.getOriginalFilename())
-```
-
-## 4. 服务端口
+## 2. 服务端口
 
 | 服务 | 地址 |
 | --- | --- |
 | Vue 前端 | `http://localhost:5173` |
 | Java 后端 | `http://localhost:8080` |
 | Python 模型服务 | `http://localhost:8000` |
-| MySQL 后续预留 | `localhost:3306` |
+| MySQL | `localhost:3306` |
 
-## 5. Java 后端建议包结构
-
-当前后端还处于早期原型阶段，后续建议整理为：
+## 3. 影像检测调用链路
 
 ```text
-src/main/java/com/example/medical
+用户选择患者文件夹
+  -> Vue 解析 Cine/LGE 文件
+  -> Vue 使用 multipart/form-data 上传 files
+  -> Java /api/predict 接收 MultipartFile[]
+  -> Java 保留 originalFilename 转发给 Python /predict
+  -> Python 临时还原患者目录
+  -> Python 调用模型推理
+  -> Python 返回预测结果
+  -> Java 统一包装响应
+  -> Vue 展示结果
+```
+
+前端上传时必须保留相对路径：
+
+```js
+formData.append('files', file, relativePath)
+```
+
+Java 转发给 Python 时也必须保留文件名：
+
+```java
+.filename(file.getOriginalFilename())
+```
+
+## 4. 患者信息调用链路
+
+```text
+Vue 患者信息页
+  -> GET /api/patients
+  -> Java PatientController
+  -> PatientRepository
+  -> MySQL patients
+  -> 返回患者列表
+```
+
+新增、修改、删除同理：
+
+```text
+Vue 表单操作
+  -> POST/PUT/DELETE /api/patients
+  -> Java 后端执行 SQL
+  -> MySQL 更新数据
+  -> Vue 刷新表格
+```
+
+## 5. Java 后端当前结构
+
+```text
+medical-system/src/main/java/com/example/medical
   MedicalSystemApplication.java
-  common/
-    ApiResponse.java
   config/
     RestClientConfig.java
   controller/
     HealthController.java
     PredictController.java
     PatientController.java
-    TestRecordController.java
-  client/
-    ModelServiceClient.java
-  service/
-    PredictService.java
-    PatientService.java
-    TestRecordService.java
+    DatabaseController.java
   dto/
-    PredictResponse.java
-    PatientRequest.java
-    PatientResponse.java
-    TestRecordResponse.java
-  entity/
+    CreatePatientRequest.java
+    UpdatePatientRequest.java
+  model/
     Patient.java
-    TestRecord.java
   repository/
     PatientRepository.java
-    TestRecordRepository.java
 ```
 
-## 6. 当前 Java 后端整理建议
+说明：
 
-当前已有：
+- `controller` 接收 HTTP 请求。
+- `dto` 承接请求体或响应数据。
+- `model` 表示业务数据对象。
+- `repository` 负责 SQL 和数据库访问。
+- `config` 放 Spring 配置类。
+
+## 6. 后端后续建议结构
+
+当前为了学习 SQL，患者功能先直接使用 `Controller -> Repository`。后续代码变复杂后，再拆出 `Service` 层：
 
 ```text
-controller/HealthController.java
-controller/MockPredictController.java
-config/RestClientConfig.java
+controller/
+  PatientController.java
+service/
+  PatientService.java
+repository/
+  PatientRepository.java
 ```
 
-建议下一步手动调整：
+拆分后职责：
 
-1. `MockPredictController` 改名为 `PredictController`。
-2. 接口路径从 `/api/mock-predict` 逐步调整为 `/api/predict`。
-3. 方法名从 `mockPredict` 改为 `predict`。
-4. 入参从单文件 `MultipartFile file` 改为多文件 `MultipartFile[] files`。
-5. Java 转发 Python 时使用字段名 `files`。
-6. 暂时保留统一包装：
+- `Controller` 只处理 HTTP 入参和响应。
+- `Service` 处理业务规则。
+- `Repository` 只处理 SQL。
 
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {}
-}
-```
+## 7. Python 服务职责边界
 
-## 7. Python 模型服务设计
+Python 服务负责：
 
-Python 服务当前职责：
-
-- `/health` 返回服务状态。
-- `/predict` 接收多文件上传。
-- 将上传文件临时还原成患者目录。
-- 调用 `run_test.py` 中的 `TTSTPredictor`。
-- 返回模型推理结果。
+- `/health` 健康检查。
+- `/predict` 接收多文件。
+- 临时还原患者目录。
+- 调用模型推理。
+- 返回模型结果。
 
 Python 服务不负责：
 
-- 保存数据库。
 - 管理患者信息。
-- 暴露模型权重路径。
-- 生成 CSV 报告。
-
-## 8. 数据库接入时机
-
-当前优先级：
-
-1. 先跑通前端 -> Java -> Python 的真实推理闭环。
-2. 再整理 Java 后端结构。
-3. 再接入数据库。
-
-原因：
-
-- 当前核心风险是多文件路径、模型服务调用和推理结果返回。
-- 数据库可以在链路跑通后再接入，避免同时处理太多复杂度。
+- 访问 MySQL。
+- 保存检测记录。
+- 暴露模型权重路径给前端。

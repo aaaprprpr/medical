@@ -1,33 +1,30 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { createPatient, createPatientRecord, findPatientByExactName } from '../services/patientApi'
 
-// 预测请求状态
 const selectedFileName = ref('')
 const previewUrl = ref('')
 const selectedFile = ref(null)
 const result = ref(null)
 const loading = ref(false)
 const errorMessage = ref('')
+const saveMessage = ref('')
 
-// 患者表单状态
 const patientName = ref('')
 const patientGender = ref('MALE')
 const patientAge = ref('')
 const isDragging = ref(false)
 
-// 解析后的患者文件夹图像数据
 const cineImages = ref([])
 const lgeImages = ref([])
 const unmatchedFiles = ref([])
 
-// 图像相册和查看器状态
 const imageMode = ref('CINE')
 const selectedLocation = ref(null)
 const isViewerOpen = ref(false)
 const viewerIndex = ref(0)
 
 
-// 相册派生数据
 const cineLocations = computed(() => { return [...new Set(cineImages.value.map(image => image.location))] })
 const visibleImages = computed(() => {
     if (imageMode.value === 'CINE') {
@@ -40,14 +37,13 @@ const viewerImage = computed(() => {
 })
 
 
-// 将选中的患者文件夹解析成 Cine/LGE 图像列表
 function parsePatientFolder(files) {
-    const firstFile = Array.from(files).find(file => file.webkitRelativePath)
+    const firstFile = Array.from(files).find(file => file.relativePath || file.webkitRelativePath)
     if (!firstFile) {
         patientName.value = '未找到文件'
     }
     else {
-        patientName.value = firstFile.webkitRelativePath.split('/')[0]
+        patientName.value = (firstFile.relativePath || firstFile.webkitRelativePath).split('/')[0]
     }
 
     const cinePattern = /^([^/]+)\/cine(?:\/sa)?\/location_(\d+)\/frame_(\d+)\.png$/i
@@ -58,7 +54,7 @@ function parsePatientFolder(files) {
     const unmatched = []
 
     for (const file of Array.from(files)) {
-        const path = file.webkitRelativePath || file.name
+        const path = file.relativePath || file.webkitRelativePath || file.name
         const cineMatch = path.match(cinePattern)
         if (cineMatch) {
             parsedCine.push({
@@ -97,7 +93,6 @@ function parsePatientFolder(files) {
 }
 
 
-// 保留第一张图像，给当前后端预测流程使用
 function useFirstImage(files) {
     const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'))
 
@@ -118,7 +113,43 @@ function useFirstImage(files) {
     errorMessage.value = ''
 }
 
-// 切换 Cine/LGE 相册模式
+async function chooseFolder() {
+    if (!window.showDirectoryPicker) {
+        errorMessage.value = '当前浏览器不支持直接选择文件夹，请使用 Chrome 或 Edge，或者拖拽文件夹'
+        return
+    }
+
+    try {
+        const directoryHandle = await window.showDirectoryPicker()
+        const files = []
+
+        await collectDirectoryFiles(directoryHandle, directoryHandle.name, files)
+        parsePatientFolder(files)
+        useFirstImage(files)
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            errorMessage.value = error.message
+        }
+    }
+}
+
+async function collectDirectoryFiles(directoryHandle, currentPath, files) {
+    for await (const handle of directoryHandle.values()) {
+        const childPath = `${currentPath}/${handle.name}`
+
+        if (handle.kind === 'file') {
+            const file = await handle.getFile()
+            file.relativePath = childPath
+            files.push(file)
+            continue
+        }
+
+        if (handle.kind === 'directory') {
+            await collectDirectoryFiles(handle, childPath, files)
+        }
+    }
+}
+
 function switchImageMode(mode) {
     imageMode.value = mode
     isViewerOpen.value = false
@@ -127,7 +158,6 @@ function switchImageMode(mode) {
     }
 }
 
-// 单图查看器控制
 function openViewer(index) {
     viewerIndex.value = index
     isViewerOpen.value = true
@@ -153,7 +183,6 @@ function showNextImage() {
 }
 
 
-// 文件夹选择和拖拽处理
 function handleFolderChange(event) {
     parsePatientFolder(event.target.files)
     useFirstImage(event.target.files)
@@ -164,7 +193,6 @@ function handleDrop(event) {
     useFirstImage(event.dataTransfer.files)
 }
 
-// 后端预测请求
 async function submitPredict() {
     const imagesForPredict = [...cineImages.value, ...lgeImages.value]
 
@@ -175,6 +203,7 @@ async function submitPredict() {
 
     loading.value = true
     errorMessage.value = ''
+    saveMessage.value = ''
     result.value = null
     const formData = new FormData()
 
@@ -183,6 +212,7 @@ async function submitPredict() {
     }
 
     try {
+        const patient = await ensurePatientExists()
         const response = await fetch('/api/predict', {
             method: 'POST',
             body: formData
@@ -191,13 +221,71 @@ async function submitPredict() {
             throw new Error(`请求失败: ${response.statusText}`)
         }
         const responseData = await response.json()
-        result.value = responseData.data
+        const predictionResult = responseData.data
+        result.value = predictionResult
+        await saveDetectionRecord(patient, predictionResult)
     } catch (error) {
         errorMessage.value = error.message
     } finally {
         loading.value = false
     }
 }
+
+function getPatientGenderLabel() {
+    return patientGender.value === 'FEMALE' ? '女' : '男'
+}
+
+function getPatientAgeNumber() {
+    if (patientAge.value === null || patientAge.value === undefined || String(patientAge.value).trim() === '') {
+        throw new Error('未找到已有患者，请填写完整患者信息：年龄不能为空')
+    }
+
+    const age = Number(patientAge.value)
+
+    if (!Number.isInteger(age) || age < 0 || age > 120) {
+        throw new Error('请填写 0 到 120 之间的整数年龄')
+    }
+
+    return age
+}
+
+async function ensurePatientExists() {
+    const name = patientName.value.trim()
+
+    if (!name) {
+        throw new Error('请填写患者姓名')
+    }
+
+    const existingPatient = await findPatientByExactName(name)
+    if (existingPatient) {
+        return existingPatient
+    }
+
+    await createPatient({
+        name,
+        gender: getPatientGenderLabel(),
+        age: getPatientAgeNumber()
+    })
+
+    const createdPatient = await findPatientByExactName(name)
+    if (!createdPatient) {
+        throw new Error('患者创建后未找到，请刷新后重试')
+    }
+
+    return createdPatient
+}
+
+async function saveDetectionRecord(patient, predictionResult) {
+    await createPatientRecord(patient.id, {
+        result: formatResultLabel(predictionResult.result),
+        confidence: predictionResult.probability,
+        remark: '影像检测自动保存'
+    })
+
+    window.dispatchEvent(new CustomEvent('patient-data-changed'))
+    saveMessage.value = `已保存到 ${patient.name} 的检测记录`
+}
+
 function formatResultLabel(resultValue) {
     if (resultValue === 'mace_cine') {
         return '患病'
@@ -308,8 +396,8 @@ function formatProbability(value) {
 
             <div class="drop-zone" :class="{ dragging: isDragging }" @dragover.prevent="isDragging = true"
                 @dragleave.prevent="isDragging = false" @drop.prevent="handleDrop">
-                <p class="hint">拖拽或点击按钮上传文件夹</p>
-                <input type="file" webkitdirectory multiple @change="handleFolderChange">
+                <p class="hint">拖拽或点击按钮选择文件夹</p>
+                <button type="button" class="folder-button" @click="chooseFolder">选择文件夹</button>
             </div>
 
             <p class="file-name">当前文件夹：{{ patientName || '未选择' }}</p>
@@ -321,6 +409,7 @@ function formatProbability(value) {
             </button>
 
             <div v-if="result" class="result">
+                <p v-if="saveMessage" class="save-message">{{ saveMessage }}</p>
                 <h2>预测结果：</h2>
                 <p>判断：{{ formatResultLabel(result.result) }}</p>
                 <p>置信度：{{ formatProbability(result.probability) }}</p>
@@ -600,6 +689,16 @@ input {
     font-size: 14px;
 }
 
+.folder-button {
+    margin-top: 8px;
+    border: 1px solid #d1d5db;
+    background: #fff;
+}
+
+.folder-button:hover {
+    background: #f3f4f6;
+}
+
 .file-name {
     margin-top: 12px;
 }
@@ -607,6 +706,10 @@ input {
 .error {
     margin-top: 16px;
     color: red;
+}
+
+.save-message {
+    color: #15803d;
 }
 
 .result {

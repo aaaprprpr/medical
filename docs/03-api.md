@@ -1,26 +1,20 @@
-# API 设计
+# API 文档
 
 ## 1. 基础约定
 
-### 1.1 Java 后端地址
+Java 后端地址：
 
 ```text
 http://localhost:8080
 ```
 
-### 1.2 Python 模型服务地址
+Python 模型服务地址：
 
 ```text
 http://localhost:8000
 ```
 
-### 1.3 Java 后端 API 前缀
-
-```text
-/api
-```
-
-### 1.4 Java 统一响应格式
+Java 后端统一响应格式：
 
 ```json
 {
@@ -29,16 +23,6 @@ http://localhost:8000
   "data": {}
 }
 ```
-
-常用错误码暂定：
-
-| code | 说明 |
-| --- | --- |
-| 0 | 成功 |
-| 40000 | 请求参数错误 |
-| 40003 | 上传文件为空 |
-| 50000 | 系统内部错误 |
-| 50001 | 模型服务调用失败 |
 
 ## 2. 健康检查
 
@@ -71,37 +55,26 @@ GET /health
 ```json
 {
   "status": "UP",
-  "model_loaded": false
+  "model_loaded": true
 }
 ```
 
-`model_loaded=false` 表示模型还没有被第一次预测请求触发加载。
-
-## 3. 当前检测接口
+## 3. 影像预测接口
 
 ### 3.1 Java 后端预测接口
 
-当前建议接口：
+前端调用该接口。
 
 ```http
 POST /api/predict
 Content-Type: multipart/form-data
 ```
 
-当前过渡期旧接口：
-
-```http
-POST /api/mock-predict
-Content-Type: multipart/form-data
-```
-
-建议后续删除 `mock` 命名。
-
 请求字段：
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| files | file[] | 是 | 患者文件夹下的全部 Cine/LGE 图像 |
+| files | file[] | 是 | 患者文件夹下解析出的全部 Cine/LGE 图像 |
 
 文件名必须携带相对路径，例如：
 
@@ -110,7 +83,7 @@ Patient_001/Cine/SA/Location_01/Frame_01.png
 Patient_001/LGE/Location_01.png
 ```
 
-Java 后端响应示例：
+响应示例：
 
 ```json
 {
@@ -125,24 +98,14 @@ Java 后端响应示例：
     "prob_mace": 0.8732,
     "prob_no_mace": 0.1268,
     "has_lge": true,
-    "results": [
-      {
-        "patient_id": "Patient_001",
-        "result": "mace_cine",
-        "pred_label": 0,
-        "probability": 0.8732,
-        "prob_mace": 0.8732,
-        "prob_no_mace": 0.1268,
-        "has_lge": true
-      }
-    ]
+    "results": []
   }
 }
 ```
 
 ### 3.2 Python 模型预测接口
 
-该接口只允许 Java 后端调用，前端不直接访问。
+只允许 Java 后端调用，前端不直接访问。
 
 ```http
 POST /predict
@@ -155,43 +118,72 @@ Content-Type: multipart/form-data
 | --- | --- | --- | --- |
 | files | file[] | 是 | 患者文件夹中的全部图像，filename 需要携带相对路径 |
 
-兼容字段：
+## 4. 患者接口
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| file | file | 旧单文件字段，仅用于临时兼容，不适合真实模型推理 |
+### 4.1 查询患者列表
+
+```http
+GET /api/patients
+```
+
+支持查询参数：
+
+| 参数 | 必填 | 示例 | 说明 |
+| --- | --- | --- | --- |
+| keyword | 否 | `001` | 按姓名模糊搜索 |
+| gender | 否 | `男` | 按性别筛选 |
+| sortBy | 否 | `age` | 排序字段 |
+| order | 否 | `asc` | 排序方向，`asc` 或 `desc` |
+
+支持的 `sortBy`：
+
+| 前端参数 | 数据库字段 |
+| --- | --- |
+| `id` | `id` |
+| `name` | `name` |
+| `gender` | `gender` |
+| `age` | `age` |
+| `createdAt` | `created_at` |
+| `updatedAt` | `updated_at` |
+
+请求示例：
+
+```http
+GET /api/patients?keyword=Patient&gender=男&sortBy=age&order=desc
+```
 
 响应示例：
 
 ```json
 {
-  "count": 1,
-  "patient_id": "Patient_001",
-  "result": "mace_cine",
-  "pred_label": 0,
-  "probability": 0.8732,
-  "prob_mace": 0.8732,
-  "prob_no_mace": 0.1268,
-  "has_lge": true,
-  "results": [
+  "code": 0,
+  "message": "success",
+  "data": [
     {
-      "patient_id": "Patient_001",
-      "result": "mace_cine",
-      "pred_label": 0,
-      "probability": 0.8732,
-      "prob_mace": 0.8732,
-      "prob_no_mace": 0.1268,
-      "has_lge": true
+      "id": 1,
+      "name": "Patient_001",
+      "gender": "男",
+      "age": 45,
+      "createdAt": "2026-06-19T11:51:33",
+      "updatedAt": "2026-06-19T11:51:33"
     }
   ]
 }
 ```
 
-## 4. 后续患者接口
+### 4.2 查询单个患者
 
-数据库接入后实现。
+```http
+GET /api/patients/{id}
+```
 
-### 4.1 创建患者
+示例：
+
+```http
+GET /api/patients/1
+```
+
+### 4.3 新增患者
 
 ```http
 POST /api/patients
@@ -202,50 +194,57 @@ Content-Type: application/json
 
 ```json
 {
-  "name": "Patient_001",
-  "gender": "MALE",
-  "age": 45
+  "name": "Patient_003",
+  "gender": "男",
+  "age": 52
 }
 ```
 
-### 4.2 查询患者列表
+响应示例：
 
-```http
-GET /api/patients
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "affectedRows": 1
+  }
+}
 ```
 
-### 4.3 查询患者详情
+### 4.4 修改患者
 
 ```http
-GET /api/patients/{patientId}
+PUT /api/patients/{id}
+Content-Type: application/json
 ```
 
-## 5. 后续检测记录接口
+请求示例：
 
-数据库接入后实现。
+```json
+{
+  "name": "Patient_003",
+  "gender": "男",
+  "age": 53
+}
+```
 
-### 5.1 创建检测记录并预测
+### 4.5 删除患者
 
 ```http
-POST /api/patients/{patientId}/tests
-Content-Type: multipart/form-data
+DELETE /api/patients/{id}
 ```
 
-请求字段：
+该接口当前执行物理删除。
 
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| files | file[] | 是 | 患者影像文件 |
-| remark | string | 否 | 备注 |
+## 5. 检测记录接口
 
-### 5.2 查询患者检测记录
+检测记录接口尚未实现，后续预计包括：
 
 ```http
-GET /api/patients/{patientId}/tests
+GET /api/patients/{patientId}/records
+GET /api/records/{recordId}
+POST /api/patients/{patientId}/records
 ```
 
-### 5.3 查询检测详情
-
-```http
-GET /api/tests/{testId}
-```
+后续患者列表中的“最近检测结果”应由患者表和检测记录表联表查询得到。
