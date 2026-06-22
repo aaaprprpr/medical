@@ -1,11 +1,14 @@
 from __future__ import absolute_import, division, print_function
 
 import argparse
+import base64
 import contextlib
+import html
 import io
 import logging
 import math
 import re
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -178,6 +181,39 @@ def is_frontend_patient_dir(path):
     )
 
 
+def resolve_evaluation_cine_location_root(cine_patient_dir):
+    sa_dir = find_child_dir(cine_patient_dir, "SA")
+    return sa_dir if sa_dir is not None else cine_patient_dir
+
+
+def is_evaluation_root(path):
+    if is_frontend_patient_dir(path):
+        return False
+
+    cine_root = find_child_dir(path, "Cine")
+    lge_root = find_child_dir(path, "LGE")
+    if cine_root is None or lge_root is None:
+        return False
+
+    for patient_dir in cine_root.iterdir():
+        if not patient_dir.is_dir():
+            continue
+        cine_location_root = resolve_evaluation_cine_location_root(patient_dir)
+        if list_cine_location_dirs(cine_location_root):
+            return True
+    return False
+
+
+def find_evaluation_root(data_path):
+    if is_evaluation_root(data_path):
+        return data_path
+
+    for child in sorted(data_path.iterdir(), key=natural_sort_key):
+        if child.is_dir() and is_evaluation_root(child):
+            return child
+    return None
+
+
 def list_cine_location_dirs(cine_root):
     if cine_root is None or not cine_root.exists() or not cine_root.is_dir():
         return []
@@ -255,6 +291,14 @@ def collect_patients(data_path, lge_root=None, label=None, max_patients=None):
     if is_frontend_patient_dir(data_path):
         patient_dirs.append(data_path)
     else:
+        evaluation_root = find_evaluation_root(data_path)
+        if evaluation_root is not None:
+            return collect_evaluation_patients(
+                evaluation_root,
+                label=label,
+                max_patients=max_patients,
+            )
+
         for child in sorted(data_path.iterdir(), key=natural_sort_key):
             if child.is_dir() and is_frontend_patient_dir(child):
                 patient_dirs.append(child)
@@ -281,6 +325,50 @@ def collect_patients(data_path, lge_root=None, label=None, max_patients=None):
                 data_path
             )
         )
+    return patients
+
+
+def collect_evaluation_patients(data_path, label=None, max_patients=None):
+    data_path = Path(data_path)
+    override_class, override_label = parse_label(label)
+    cine_root = find_child_dir(data_path, "Cine")
+    lge_root = find_child_dir(data_path, "LGE")
+
+    if cine_root is None or lge_root is None:
+        raise RuntimeError(
+            "Evaluation root must contain Cine and LGE folders: {}".format(data_path)
+        )
+
+    patients = []
+    for cine_patient_dir in sorted(cine_root.iterdir(), key=natural_sort_key):
+        if not cine_patient_dir.is_dir():
+            continue
+
+        cine_location_root = resolve_evaluation_cine_location_root(cine_patient_dir)
+        if not list_cine_location_dirs(cine_location_root):
+            continue
+
+        lge_dir = lge_root / cine_patient_dir.name
+        patients.append(
+            PatientInfo(
+                patient_id=cine_patient_dir.name,
+                cine_dir=cine_location_root,
+                lge_dir=lge_dir,
+                class_name=override_class,
+                label=override_label,
+            )
+        )
+
+    if max_patients is not None:
+        patients = patients[:max_patients]
+
+    if not patients:
+        raise RuntimeError(
+            "No evaluation-format patient folders were found under {}. Expected Final_test_data/Cine/Patient_xxx/SA/Location_xx/Frame_xx.png".format(
+                data_path
+            )
+        )
+
     return patients
 
 
@@ -511,6 +599,117 @@ def build_api_response(rows):
     if len(results) == 1:
         response.update(results[0])
     return response
+
+
+def build_evaluation_results(rows):
+    return [
+        {
+            "patient_index": row["patient_id"],
+            "mace_score": row["prob_mace"],
+        }
+        for row in rows
+    ]
+
+
+def worksheet_cell_xml(cell_ref, value, is_number=False):
+    if is_number:
+        return '<c r="{cell_ref}"><v>{value}</v></c>'.format(
+            cell_ref=cell_ref,
+            value=value,
+        )
+
+    return '<c r="{cell_ref}" t="inlineStr"><is><t>{value}</t></is></c>'.format(
+        cell_ref=cell_ref,
+        value=html.escape(str(value)),
+    )
+
+
+def build_output_table_xlsx(results):
+    rows_xml = [
+        '<row r="1">{}</row>'.format(
+            worksheet_cell_xml("A1", "patient_index")
+            + worksheet_cell_xml("B1", "mace_score")
+        )
+    ]
+
+    for index, result in enumerate(results, start=2):
+        rows_xml.append(
+            '<row r="{row}">{cells}</row>'.format(
+                row=index,
+                cells=worksheet_cell_xml(
+                    "A{}".format(index), result["patient_index"]
+                )
+                + worksheet_cell_xml(
+                    "B{}".format(index),
+                    "{:.6f}".format(result["mace_score"]),
+                    is_number=True,
+                ),
+            )
+        )
+
+    sheet_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    {rows}
+  </sheetData>
+</worksheet>
+""".format(
+        rows="\n    ".join(rows_xml)
+    )
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as workbook:
+        workbook.writestr(
+            "[Content_Types].xml",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>
+""",
+        )
+        workbook.writestr(
+            "_rels/.rels",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+""",
+        )
+        workbook.writestr(
+            "xl/workbook.xml",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="output_table" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>
+""",
+        )
+        workbook.writestr(
+            "xl/_rels/workbook.xml.rels",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>
+""",
+        )
+        workbook.writestr("xl/worksheets/sheet1.xml", sheet_xml)
+
+    return buffer.getvalue()
+
+
+def build_evaluation_api_response(rows):
+    results = build_evaluation_results(rows)
+    xlsx_bytes = build_output_table_xlsx(results)
+    return {
+        "count": len(results),
+        "results": results,
+        "xlsxFilename": "output_table.xlsx",
+        "xlsxBase64": base64.b64encode(xlsx_bytes).decode("ascii"),
+    }
 
 
 class TTSTPredictor:

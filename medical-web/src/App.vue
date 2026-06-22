@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import TestView from './views/TestView.vue'
 import PatientInfoView from './views/PatientInfoView.vue'
@@ -7,22 +7,7 @@ import HistoryView from './views/HistoryView.vue'
 import ProfileView from './views/ProfileView.vue'
 
 
-const activeView = ref('patient')
-
-const patientName = ref(localStorage.getItem('patientName') || '')
-const patientGender = ref(localStorage.getItem('patientGender') || 'MALE')
-const patientAge = ref(localStorage.getItem('patientAge') || '')
-watch(patientName, value => {
-  localStorage.setItem('patientName', value)
-})
-
-watch(patientGender, value => {
-  localStorage.setItem('patientGender', value)
-})
-
-watch(patientAge, value => {
-  localStorage.setItem('patientAge', value)
-})
+const activeView = ref('test')
 </script>
 
 <template>

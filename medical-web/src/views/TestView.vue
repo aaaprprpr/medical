@@ -184,10 +184,6 @@ function showNextImage() {
 }
 
 
-function handleFolderChange(event) {
-    parsePatientFolder(event.target.files)
-    useFirstImage(event.target.files)
-}
 function handleDrop(event) {
     isDragging.value = false
     parsePatientFolder(event.dataTransfer.files)

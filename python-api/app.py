@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from run_test import TTSTPredictor, build_api_response
+from run_test import TTSTPredictor, build_api_response, build_evaluation_api_response
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s", level=logging.INFO
@@ -108,4 +108,37 @@ def predict_path(request: PredictPathRequest):
 
     response = build_api_response(rows)
     logger.info("Prediction completed: %s patient(s)", response["count"])
+    return response
+
+
+@app.post("/evaluate")
+async def evaluate(files: Optional[List[UploadFile]] = File(default=None)):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded.")
+
+    with TemporaryDirectory(prefix="medical_evaluate_") as temp_dir:
+        temp_root = Path(temp_dir)
+        await save_upload_files(files, temp_root)
+
+        try:
+            rows = get_predictor().predict_path(temp_root)
+        except Exception as exc:
+            logger.exception("Evaluation failed for uploaded files.")
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    response = build_evaluation_api_response(rows)
+    logger.info("Evaluation completed: %s patient(s)", response["count"])
+    return response
+
+
+@app.post("/evaluate-path")
+def evaluate_path(request: PredictPathRequest):
+    try:
+        rows = get_predictor().predict_path(request.data_path)
+    except Exception as exc:
+        logger.exception("Evaluation failed for local path: %s", request.data_path)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    response = build_evaluation_api_response(rows)
+    logger.info("Evaluation completed: %s patient(s)", response["count"])
     return response

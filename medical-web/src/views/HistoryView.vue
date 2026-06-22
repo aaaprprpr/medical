@@ -85,8 +85,7 @@ onBeforeUnmount(() => {
   <section class="log-page">
     <div class="log-toolbar">
       <div>
-        <h2>操作记录</h2>
-        <p>共 {{ logs.length }} 条记录</p>
+        <p>共 {{ logs.length }} 条</p>
       </div>
 
       <div class="toolbar-actions">
