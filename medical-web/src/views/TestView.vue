@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { createPatient, createPatientRecord, findPatientByExactName } from '../services/patientApi'
+import { safeCreateOperationLog } from '../services/operationLogApi'
 
 const selectedFileName = ref('')
 const previewUrl = ref('')
@@ -283,6 +284,10 @@ async function saveDetectionRecord(patient, predictionResult) {
     })
 
     window.dispatchEvent(new CustomEvent('patient-data-changed'))
+    await safeCreateOperationLog({
+        action: '影像检测',
+        detail: `${patient.name} 完成影像检测，结果：${formatResultLabel(predictionResult.result)}，置信度：${formatProbability(predictionResult.probability)}`
+    })
     saveMessage.value = `已保存到 ${patient.name} 的检测记录`
 }
 
@@ -342,9 +347,8 @@ function formatProbability(value) {
                     <p v-else class="empty-text">请先选择文件夹</p>
                 </section>
 
-                <!-- 区域列表 -->
                 <aside class="image-nav">
-                    <!-- 切换按钮 -->
+
                     <div class="mode-tabs">
                         <button type="button" :class="{ active: imageMode === 'CINE' }"
                             @click="switchImageMode('CINE')">
@@ -355,7 +359,7 @@ function formatProbability(value) {
                         </button>
                     </div>
 
-                    <!-- 列表 -->
+
                     <div v-if="imageMode === 'CINE'" class="location-list">
                         <button v-for="location in cineLocations" :key="location" type="button"
                             :class="{ active: selectedLocation === location }"
@@ -404,7 +408,7 @@ function formatProbability(value) {
             <p>Cine 图片数：{{ cineImages.length }}</p>
             <p>LGE 图片数：{{ lgeImages.length }}</p>
 
-            <button @click="submitPredict" :disabled="loading || (cineImages.length + lgeImages.length === 0)">
+            <button class="predict-button" @click="submitPredict" :disabled="loading || (cineImages.length + lgeImages.length === 0)">
                 {{ loading ? '预测中...' : '开始测试' }}
             </button>
 
@@ -425,13 +429,14 @@ function formatProbability(value) {
 /* 页面整体布局 */
 .test-page {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) clamp(320px, 22vw, 390px);
-    gap: 28px;
-    min-height: calc(100vh - 96px);
+    grid-template-columns: minmax(0, 1fr) clamp(320px, 23vw, 380px);
+    gap: 30px;
+    min-height: calc(100vh - 104px);
 }
 
 .preview-panel {
     min-width: 0;
+    background: var(--color-surface);
 }
 
 .gallery-layout {
@@ -454,7 +459,15 @@ button {
     width: 100%;
     margin-top: 16px;
     padding: 10px 16px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
+    color: #334155;
     cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+button:hover {
+    background: var(--color-surface-soft);
 }
 
 button:disabled {
@@ -474,11 +487,16 @@ button:disabled {
 .thumb {
     width: 100%;
     margin: 0;
-    padding: 0;
+    padding: 6px;
     border: none;
     background: transparent;
     cursor: pointer;
     text-align: center;
+    transition: background 0.14s ease;
+}
+
+.thumb:hover {
+    background: var(--color-surface-soft);
 }
 
 .thumb img {
@@ -486,18 +504,19 @@ button:disabled {
     aspect-ratio: 1;
     object-fit: cover;
     display: block;
+    border-radius: var(--radius-sm);
 }
 
 .thumb span {
     display: block;
     margin-top: 6px;
     font-size: 13px;
-    color: #6b7280;
+    color: var(--color-muted);
 }
 
 /* Cine/LGE 图像导航 */
 .image-nav {
-    border-left: 1px solid #e5e7eb;
+    border-left: 1px solid var(--color-border);
     padding-left: 16px;
 }
 
@@ -515,13 +534,20 @@ button:disabled {
     padding: 8px 10px;
     border: none;
     background: transparent;
+    color: #334155;
     cursor: pointer;
+}
+
+.mode-tabs button:hover,
+.location-list button:hover {
+    background: var(--color-surface-soft);
 }
 
 .mode-tabs button.active,
 .location-list button.active {
-    background: #eff6ff;
-    color: #2563eb;
+    background: var(--color-primary-soft);
+    color: var(--color-primary);
+    font-weight: 600;
 }
 
 .location-list {
@@ -532,7 +558,7 @@ button:disabled {
 
 .nav-hint,
 .empty-text {
-    color: #6b7280;
+    color: var(--color-muted);
 }
 
 /* 单图查看器 */
@@ -619,22 +645,17 @@ button:disabled {
 /* 右侧控制面板 */
 .control-panel {
     min-width: 0;
-    border-left: 1px solid #e5e7eb;
+    border-left: 1px solid var(--color-border);
     padding-left: 28px;
     padding-right: 8px;
 }
 
 .control-panel h2 {
-    margin-top: 0;
+    margin: 0 0 16px;
+    font-size: 18px;
 }
 
 /* 当前保留的级联覆盖 */
-.control-panel {
-    min-width: 0;
-    border-left: 1px solid #e5e7eb;
-    padding-left: 24px;
-}
-
 .field-row {
     display: grid;
     grid-template-columns: 48px minmax(0, 1fr);
@@ -644,14 +665,16 @@ button:disabled {
 }
 
 .field-label {
-    color: #4b5563;
+    color: #334155;
+    font-size: 14px;
 }
 
 input {
     width: 100%;
     min-width: 0;
-    padding: 8px 10px;
-    border: 1px solid #d1d5db;
+    height: 38px;
+    padding: 0 10px;
+    border: 1px solid var(--color-border-strong);
 }
 
 .segmented {
@@ -663,40 +686,44 @@ input {
 .segmented button {
     margin: 0;
     padding: 8px 0;
-    border: 1px solid #d1d5db;
-    background: #fff;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
     cursor: pointer;
+}
+
+.segmented button:hover {
+    background: var(--color-surface-soft);
 }
 
 .segmented button.active {
     color: #fff;
-    background: #2563eb;
-    border-color: #2563eb;
+    background: var(--color-primary);
+    border-color: var(--color-primary);
 }
 
 .drop-zone {
     margin-top: 16px;
-    padding: 14px 0;
+    padding: 14px 0 16px;
     background: transparent;
 }
 
 .drop-zone.dragging {
-    background: #f3f4f6;
+    background: var(--color-primary-soft);
 }
 
 .hint {
-    color: #666;
+    color: var(--color-muted);
     font-size: 14px;
 }
 
 .folder-button {
     margin-top: 8px;
-    border: 1px solid #d1d5db;
-    background: #fff;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface);
 }
 
 .folder-button:hover {
-    background: #f3f4f6;
+    background: var(--color-surface-soft);
 }
 
 .file-name {
@@ -705,17 +732,44 @@ input {
 
 .error {
     margin-top: 16px;
-    color: red;
+    color: var(--color-danger);
 }
 
 .save-message {
-    color: #15803d;
+    color: var(--color-success);
 }
 
 .result {
     margin-top: 18px;
     padding-top: 12px;
     background: transparent;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--color-border);
+}
+
+.predict-button {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: #fff;
+}
+
+.predict-button:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+}
+
+@media (max-width: 1280px) {
+    .test-page {
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 22px;
+    }
+
+    .gallery-layout {
+        grid-template-columns: minmax(0, 1fr) 150px;
+        gap: 18px;
+    }
+
+    .control-panel {
+        padding-left: 22px;
+    }
 }
 </style>

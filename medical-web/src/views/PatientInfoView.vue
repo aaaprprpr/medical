@@ -1,6 +1,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { createPatient, deletePatient, listPatients, updatePatient } from '../services/patientApi'
+import { safeCreateOperationLog } from '../services/operationLogApi'
 
 const patients = ref([])
 const loading = ref(false)
@@ -87,6 +88,10 @@ async function handleCreatePatient() {
       age: ''
     }
     createMessage.value = '患者已添加'
+    await safeCreateOperationLog({
+      action: '添加患者',
+      detail: `添加患者 ${name}`
+    })
     await loadPatients()
   } catch (error) {
     createMessage.value = error.message
@@ -108,6 +113,10 @@ async function handleDeletePatient(patient) {
   try {
     await deletePatient(patient.id)
     deleteMessage.value = '患者已删除'
+    await safeCreateOperationLog({
+      action: '删除患者',
+      detail: `删除患者 ${patient.name}`
+    })
     await loadPatients()
   } catch (error) {
     deleteMessage.value = error.message
@@ -152,6 +161,10 @@ async function saveEditPatient(patient) {
 
     editingId.value = null
     editMessage.value = '患者信息已更新'
+    await safeCreateOperationLog({
+      action: '编辑患者',
+      detail: `更新患者 ${patient.name} 的基本信息`
+    })
     await loadPatients()
   } catch (error) {
     editMessage.value = error.message
@@ -238,52 +251,46 @@ onBeforeUnmount(() => {
         <thead>
           <tr>
             <th>
-              <span class="header-cell">
-                姓名
-                <button class="sort-button" title="点击排序" @click="changeSort('name')">
-                  {{ getSortIcon('name') }}
-                </button>
-              </span>
+              <button class="sortable-header" :class="{ active: sortState.sortBy === 'name' }"
+                @click="changeSort('name')">
+                <span>姓名</span>
+                <span class="sort-indicator">{{ getSortIcon('name') }}</span>
+              </button>
             </th>
             <th>
-              <span class="header-cell">
-                性别
-                <button class="sort-button" title="点击排序" @click="changeSort('gender')">
-                  {{ getSortIcon('gender') }}
-                </button>
-              </span>
+              <button class="sortable-header" :class="{ active: sortState.sortBy === 'gender' }"
+                @click="changeSort('gender')">
+                <span>性别</span>
+                <span class="sort-indicator">{{ getSortIcon('gender') }}</span>
+              </button>
             </th>
             <th>
-              <span class="header-cell">
-                年龄
-                <button class="sort-button" title="点击排序" @click="changeSort('age')">
-                  {{ getSortIcon('age') }}
-                </button>
-              </span>
+              <button class="sortable-header" :class="{ active: sortState.sortBy === 'age' }"
+                @click="changeSort('age')">
+                <span>年龄</span>
+                <span class="sort-indicator">{{ getSortIcon('age') }}</span>
+              </button>
             </th>
             <th>
-              <span class="header-cell">
-                最近检测结果
-                <button class="sort-button" title="点击排序" @click="changeSort('latestResult')">
-                  {{ getSortIcon('latestResult') }}
-                </button>
-              </span>
+              <button class="sortable-header" :class="{ active: sortState.sortBy === 'latestResult' }"
+                @click="changeSort('latestResult')">
+                <span>最近检测结果</span>
+                <span class="sort-indicator">{{ getSortIcon('latestResult') }}</span>
+              </button>
             </th>
             <th>
-              <span class="header-cell">
-                置信度
-                <button class="sort-button" title="点击排序" @click="changeSort('latestConfidence')">
-                  {{ getSortIcon('latestConfidence') }}
-                </button>
-              </span>
+              <button class="sortable-header" :class="{ active: sortState.sortBy === 'latestConfidence' }"
+                @click="changeSort('latestConfidence')">
+                <span>置信度</span>
+                <span class="sort-indicator">{{ getSortIcon('latestConfidence') }}</span>
+              </button>
             </th>
             <th>
-              <span class="header-cell">
-                最近检测时间
-                <button class="sort-button" title="点击排序" @click="changeSort('latestTestedAt')">
-                  {{ getSortIcon('latestTestedAt') }}
-                </button>
-              </span>
+              <button class="sortable-header" :class="{ active: sortState.sortBy === 'latestTestedAt' }"
+                @click="changeSort('latestTestedAt')">
+                <span>最近检测时间</span>
+                <span class="sort-indicator">{{ getSortIcon('latestTestedAt') }}</span>
+              </button>
             </th>
             <th>操作</th>
           </tr>
@@ -357,15 +364,18 @@ onBeforeUnmount(() => {
           <input v-model="createForm.age" type="number" min="0" max="120" placeholder="患者年龄">
         </div>
 
-        <button class="primary-button" :disabled="submitting" @click="handleCreatePatient">
-          {{ submitting ? '添加中...' : '添加患者' }}
-        </button>
+        <div class="form-actions">
+          <span></span>
+          <button class="primary-button" :disabled="submitting" @click="handleCreatePatient">
+            {{ submitting ? '添加中...' : '添加患者' }}
+          </button>
+        </div>
         <p v-if="createMessage" class="message-text">{{ createMessage }}</p>
       </section>
 
       <section class="panel-section">
         <div class="panel-header">
-          <h2>筛选面板</h2>
+          <h2>查询患者</h2>
         </div>
 
         <div class="form-row">
@@ -406,8 +416,11 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <button class="primary-button" @click="handleSearch">搜索</button>
-        <button class="secondary-button" @click="resetSearch">重置</button>
+        <div class="form-actions two">
+          <span></span>
+          <button class="primary-button" @click="handleSearch">搜索</button>
+          <button class="secondary-button" @click="resetSearch">重置</button>
+        </div>
       </section>
     </aside>
   </section>
@@ -415,19 +428,20 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .patient-page {
-  min-height: calc(100vh - 96px);
+  min-height: calc(100vh - 104px);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 23vw, 380px);
+  gap: 28px;
 }
 
 .table-area {
   min-width: 0;
-  background: #fff;
+  overflow-x: auto;
+  background: var(--color-surface);
 }
 
 .table-title {
-  height: 44px;
+  min-height: 46px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -439,7 +453,7 @@ onBeforeUnmount(() => {
 }
 
 .table-title span {
-  color: #6b7280;
+  color: var(--color-muted);
   font-size: 14px;
 }
 
@@ -447,101 +461,149 @@ onBeforeUnmount(() => {
   width: 100%;
   border-collapse: collapse;
   background: #fff;
+  font-size: 14px;
 }
 
 .patient-table th,
 .patient-table td {
-  height: 44px;
-  padding: 0 12px;
+  height: 46px;
+  padding: 0 14px;
   text-align: left;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border);
   white-space: nowrap;
 }
 
 .patient-table th {
-  color: #374151;
+  color: #334155;
   font-weight: 600;
-  background: #f9fafb;
+  background: var(--color-surface-soft);
+  padding: 0;
+}
+
+.patient-table th:last-child {
+  padding: 0 14px;
 }
 
 .patient-table td {
-  color: #111827;
+  color: var(--color-text);
+}
+
+.patient-table tbody tr {
+  transition: background 0.14s ease;
+}
+
+.patient-table tbody tr:hover {
+  background: #f8fafc;
 }
 
 .table-edit-input {
   width: 100%;
-  height: 30px;
+  height: 32px;
   padding: 0 8px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong);
   box-sizing: border-box;
 }
 
-.header-cell {
+.sortable-header {
+  width: 100%;
+  height: 46px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-}
-
-.sort-button {
-  width: 22px;
-  height: 22px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 14px;
   border: 1px solid transparent;
   background: transparent;
-  color: #6b7280;
+  color: #334155;
   cursor: pointer;
-  line-height: 1;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
 }
 
-.sort-button:hover {
-  border-color: #d1d5db;
-  background: #f3f4f6;
-  color: #111827;
+.sortable-header:hover,
+.sortable-header.active {
+  color: var(--color-primary);
+}
+
+.sort-indicator {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  color: #94a3b8;
+}
+
+.sortable-header:hover .sort-indicator,
+.sortable-header.active .sort-indicator {
+  border-color: var(--color-primary-border);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
 
 .text-button {
   margin-right: 8px;
-  border: none;
+  padding: 4px 8px;
+  border: 1px solid transparent;
   background: transparent;
-  color: #2563eb;
+  color: var(--color-primary);
   cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.text-button:hover {
+  border-color: var(--color-primary-border);
+  background: var(--color-primary-soft);
 }
 
 .text-button.danger {
-  color: #dc2626;
+  color: var(--color-danger);
+}
+
+.text-button.danger:hover {
+  border-color: #fecaca;
+  background: var(--color-danger-soft);
 }
 
 .side-panel {
-  padding-left: 24px;
-  border-left: 1px solid #e5e7eb;
+  min-width: 0;
+  padding-left: 28px;
+  border-left: 1px solid var(--color-border);
+  font-size: 14px;
 }
 
 .panel-section + .panel-section {
-  margin-top: 28px;
-  padding-top: 24px;
-  border-top: 1px solid #e5e7eb;
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--color-border);
 }
 
 .panel-header h2 {
-  margin: 0 0 20px;
-  font-size: 22px;
+  margin: 0 0 16px;
+  font-size: 18px;
 }
 
 .form-row {
-  margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .form-row label {
   display: block;
-  margin-bottom: 6px;
-  color: #374151;
+  margin-bottom: 0;
+  color: #334155;
+  font-size: 14px;
 }
 
 .form-row input,
 .form-row select {
   width: 100%;
-  height: 36px;
+  height: 38px;
   padding: 0 10px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong);
   box-sizing: border-box;
 }
 
@@ -564,19 +626,20 @@ onBeforeUnmount(() => {
 
 .option-group button {
   height: 36px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  color: #374151;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: #334155;
   cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
 }
 
 .option-group button:hover {
-  background: #f3f4f6;
+  background: var(--color-surface-soft);
 }
 
 .option-group button.active {
-  border-color: #2563eb;
-  background: #2563eb;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
   color: #fff;
 }
 
@@ -584,14 +647,31 @@ onBeforeUnmount(() => {
 .secondary-button {
   width: 100%;
   height: 38px;
-  margin-top: 8px;
+  margin-top: 0;
   cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.form-actions {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.form-actions.two {
+  grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .primary-button {
-  border: 1px solid #2563eb;
-  background: #2563eb;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
   color: #fff;
+}
+
+.primary-button:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
 }
 
 .primary-button:disabled {
@@ -600,24 +680,39 @@ onBeforeUnmount(() => {
 }
 
 .secondary-button {
-  border: 1px solid #d1d5db;
-  background: #fff;
-  color: #374151;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: #334155;
+}
+
+.secondary-button:hover {
+  background: var(--color-surface-soft);
 }
 
 .error-text {
-  color: #dc2626;
+  color: var(--color-danger);
 }
 
 .message-text {
   margin: 10px 0 0;
-  color: #4b5563;
+  color: var(--color-muted);
   font-size: 14px;
 }
 
 .empty-cell {
   height: 80px;
   text-align: center;
-  color: #6b7280;
+  color: var(--color-muted);
+}
+
+@media (max-width: 1280px) {
+  .patient-page {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 20px;
+  }
+
+  .side-panel {
+    padding-left: 20px;
+  }
 }
 </style>

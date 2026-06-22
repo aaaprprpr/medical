@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, watch } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import TestView from './views/TestView.vue'
 import PatientInfoView from './views/PatientInfoView.vue'
@@ -38,7 +38,13 @@ watch(patientAge, value => {
 <style scoped>
 .main {
   flex: 1;
-  padding: 16px 28px 24px;
+  padding: 18px 30px 28px;
   overflow-x: hidden;
+}
+
+@media (max-width: 1200px) {
+  .main {
+    padding: 16px 20px 24px;
+  }
 }
 </style>

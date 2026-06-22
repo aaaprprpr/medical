@@ -34,43 +34,58 @@ const menus = [
 
 <style scoped>
 .header {
-  height: 56px;
+  height: 58px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #fff;
+  padding: 0 30px;
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow-sm);
 }
 
 .brand {
+  font-size: 18px;
   font-weight: 700;
-  color: #111827;
+  color: var(--color-text);
 }
 
 .nav {
   display: flex;
-  gap: 4px;
+  gap: 6px;
 }
 
 button {
-  min-width: 88px;
-  height: 36px;
-  padding: 0 12px;
+  min-width: 92px;
+  height: 38px;
+  padding: 0 14px;
   border: 1px solid transparent;
   background: transparent;
-  color: #374151;
+  color: #334155;
   cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
 
 button:hover {
-  background: #f3f4f6;
-  border-color: #d1d5db;
+  background: var(--color-surface-soft);
+  border-color: var(--color-border);
 }
 
 button.active {
-  color: #1d4ed8;
-  background: #eff6ff;
-  border-color: #93c5fd;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary-border);
+  font-weight: 600;
+}
+
+@media (max-width: 1200px) {
+  .header {
+    padding: 0 20px;
+  }
+
+  button {
+    min-width: 80px;
+    padding: 0 10px;
+  }
 }
 </style>
