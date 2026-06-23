@@ -30,6 +30,11 @@ BASE_DIR = Path(__file__).resolve().parent
 IMAGE_EXTENSIONS = {".bmp", ".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 CLASS_TO_LABEL = {"mace_cine": 0, "no_mace": 1}
 LABEL_TO_CLASS = {0: "mace_cine", 1: "no_mace"}
+CLASS_NAME_ALIASES = {
+    "mace": "mace_cine",
+    "mace_cine": "mace_cine",
+    "no_mace": "no_mace",
+}
 LOCATION_DIR_RE = re.compile(r"^location[_-]?(\d+)$", re.IGNORECASE)
 FRAME_IMAGE_RE = re.compile(
     r"^frame[_-]?(\d+)\.(bmp|jpg|jpeg|png|tif|tiff)$", re.IGNORECASE
@@ -186,6 +191,27 @@ def resolve_evaluation_cine_location_root(cine_patient_dir):
     return sa_dir if sa_dir is not None else cine_patient_dir
 
 
+def is_evaluation_patient_dir(path):
+    cine_location_root = resolve_evaluation_cine_location_root(path)
+    return bool(list_cine_location_dirs(cine_location_root))
+
+
+def parse_class_dir_label(name):
+    class_name = CLASS_NAME_ALIASES.get(str(name).strip().lower())
+    if class_name is None:
+        return "", -1
+    return class_name, CLASS_TO_LABEL[class_name]
+
+
+def resolve_labeled_lge_root(lge_root, class_dir_name, class_name):
+    candidates = [class_dir_name, class_name]
+    for candidate_name in candidates:
+        candidate = find_child_dir(lge_root, candidate_name)
+        if candidate is not None:
+            return candidate
+    return lge_root
+
+
 def is_evaluation_root(path):
     if is_frontend_patient_dir(path):
         return False
@@ -195,12 +221,21 @@ def is_evaluation_root(path):
     if cine_root is None or lge_root is None:
         return False
 
-    for patient_dir in cine_root.iterdir():
-        if not patient_dir.is_dir():
+    for child in cine_root.iterdir():
+        if not child.is_dir():
             continue
-        cine_location_root = resolve_evaluation_cine_location_root(patient_dir)
-        if list_cine_location_dirs(cine_location_root):
+
+        if is_evaluation_patient_dir(child):
             return True
+
+        class_name, _ = parse_class_dir_label(child.name)
+        if not class_name:
+            continue
+
+        for patient_dir in child.iterdir():
+            if patient_dir.is_dir() and is_evaluation_patient_dir(patient_dir):
+                return True
+
     return False
 
 
@@ -257,12 +292,13 @@ def parse_label(value):
     if value is None:
         return "", -1
     value = str(value).strip()
-    if value in CLASS_TO_LABEL:
-        return value, CLASS_TO_LABEL[value]
+    class_name = CLASS_NAME_ALIASES.get(value.lower())
+    if class_name is not None:
+        return class_name, CLASS_TO_LABEL[class_name]
     if value in {"0", "1"}:
         label = int(value)
         return LABEL_TO_CLASS[label], label
-    raise ValueError("label must be one of mace_cine, no_mace, 0, 1")
+    raise ValueError("label must be one of mace, mace_cine, no_mace, 0, 1")
 
 
 def resolve_lge_dir(patient_dir, lge_root=None):
@@ -340,31 +376,51 @@ def collect_evaluation_patients(data_path, label=None, max_patients=None):
         )
 
     patients = []
-    for cine_patient_dir in sorted(cine_root.iterdir(), key=natural_sort_key):
-        if not cine_patient_dir.is_dir():
+    for child in sorted(cine_root.iterdir(), key=natural_sort_key):
+        if not child.is_dir():
             continue
 
-        cine_location_root = resolve_evaluation_cine_location_root(cine_patient_dir)
-        if not list_cine_location_dirs(cine_location_root):
-            continue
-
-        lge_dir = lge_root / cine_patient_dir.name
-        patients.append(
-            PatientInfo(
-                patient_id=cine_patient_dir.name,
-                cine_dir=cine_location_root,
-                lge_dir=lge_dir,
-                class_name=override_class,
-                label=override_label,
+        if is_evaluation_patient_dir(child):
+            cine_location_root = resolve_evaluation_cine_location_root(child)
+            patients.append(
+                PatientInfo(
+                    patient_id=child.name,
+                    cine_dir=cine_location_root,
+                    lge_dir=lge_root / child.name,
+                    class_name=override_class,
+                    label=override_label,
+                )
             )
-        )
+            continue
+
+        dir_class, dir_label = parse_class_dir_label(child.name)
+        if not dir_class:
+            continue
+
+        lge_class_root = resolve_labeled_lge_root(lge_root, child.name, dir_class)
+        for cine_patient_dir in sorted(child.iterdir(), key=natural_sort_key):
+            if not cine_patient_dir.is_dir() or not is_evaluation_patient_dir(
+                cine_patient_dir
+            ):
+                continue
+
+            cine_location_root = resolve_evaluation_cine_location_root(cine_patient_dir)
+            patients.append(
+                PatientInfo(
+                    patient_id=cine_patient_dir.name,
+                    cine_dir=cine_location_root,
+                    lge_dir=lge_class_root / cine_patient_dir.name,
+                    class_name=override_class or dir_class,
+                    label=override_label if override_label != -1 else dir_label,
+                )
+            )
 
     if max_patients is not None:
         patients = patients[:max_patients]
 
     if not patients:
         raise RuntimeError(
-            "No evaluation-format patient folders were found under {}. Expected Final_test_data/Cine/Patient_xxx/SA/Location_xx/Frame_xx.png".format(
+            "No evaluation-format patient folders were found under {}. Expected Final_test_data/Cine/Patient_xxx/SA/Location_xx/Frame_xx.png or Final_test_data/Cine/mace/Patient_xxx/SA/Location_xx/Frame_xx.png".format(
                 data_path
             )
         )

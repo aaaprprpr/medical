@@ -1,3 +1,29 @@
+async function readErrorMessage(response) {
+  const text = await response.text()
+
+  if (!text) {
+    return `请求失败：${response.status}`
+  }
+
+  try {
+    const body = JSON.parse(text)
+    const detail = body.detail || body.message || body.error
+
+    if (typeof detail === 'string') {
+      try {
+        const nested = JSON.parse(detail)
+        return nested.detail || detail
+      } catch {
+        return detail
+      }
+    }
+
+    return JSON.stringify(body)
+  } catch {
+    return text
+  }
+}
+
 export async function evaluateModel(files) {
   const formData = new FormData()
 
@@ -11,7 +37,7 @@ export async function evaluateModel(files) {
   })
 
   if (!response.ok) {
-    throw new Error(`请求失败：${response.status}`)
+    throw new Error(await readErrorMessage(response))
   }
 
   return await response.json()
@@ -27,7 +53,7 @@ export async function evaluateModelByPath(dataPath) {
   })
 
   if (!response.ok) {
-    throw new Error(`请求失败：${response.status}`)
+    throw new Error(await readErrorMessage(response))
   }
 
   return await response.json()

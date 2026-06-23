@@ -114,11 +114,13 @@ npm.cmd install
 创建数据库和项目账号：
 
 ```sql
-CREATE DATABASE medical_system
+CREATE DATABASE IF NOT EXISTS medical_system
 DEFAULT CHARACTER SET utf8mb4
 COLLATE utf8mb4_unicode_ci;
 
-CREATE USER 'medical_user'@'localhost' IDENTIFIED BY 'your_password';
+CREATE USER IF NOT EXISTS 'medical_user'@'localhost' IDENTIFIED BY '123456';
+
+ALTER USER 'medical_user'@'localhost' IDENTIFIED BY '123456';
 
 GRANT ALL PRIVILEGES ON medical_system.* TO 'medical_user'@'localhost';
 
@@ -130,7 +132,7 @@ FLUSH PRIVILEGES;
 ```properties
 spring.datasource.url=jdbc:mysql://localhost:3306/medical_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
 spring.datasource.username=medical_user
-spring.datasource.password=your_password
+spring.datasource.password=123456
 ```
 
 核心表：

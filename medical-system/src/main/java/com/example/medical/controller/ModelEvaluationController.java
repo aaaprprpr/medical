@@ -13,7 +13,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api")
@@ -44,12 +46,20 @@ public class ModelEvaluationController {
 
         MultiValueMap<String, org.springframework.http.HttpEntity<?>> body = bodyBuilder.build();
 
-        Map pythonResult = restClient.post()
-                .uri("http://localhost:8000/evaluate")
-                .contentType(MediaType.MULTIPART_FORM_DATA)
-                .body(body)
-                .retrieve()
-                .body(Map.class);
+        Map pythonResult;
+        try {
+            pythonResult = restClient.post()
+                    .uri("http://localhost:8000/evaluate")
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(body)
+                    .retrieve()
+                    .body(Map.class);
+        } catch (RestClientResponseException exception) {
+            throw new ResponseStatusException(
+                    exception.getStatusCode(),
+                    exception.getResponseBodyAsString(),
+                    exception);
+        }
 
         return Map.of(
                 "code", 0,
@@ -65,12 +75,20 @@ public class ModelEvaluationController {
         }
 
         Map<String, String> pythonRequest = Map.of("data_path", dataPath);
-        Map pythonResult = restClient.post()
-                .uri("http://localhost:8000/evaluate-path")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(pythonRequest)
-                .retrieve()
-                .body(Map.class);
+        Map pythonResult;
+        try {
+            pythonResult = restClient.post()
+                    .uri("http://localhost:8000/evaluate-path")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(pythonRequest)
+                    .retrieve()
+                    .body(Map.class);
+        } catch (RestClientResponseException exception) {
+            throw new ResponseStatusException(
+                    exception.getStatusCode(),
+                    exception.getResponseBodyAsString(),
+                    exception);
+        }
 
         return Map.of(
                 "code", 0,
