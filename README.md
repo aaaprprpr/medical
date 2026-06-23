@@ -111,23 +111,21 @@ npm.cmd install
 
 ## 数据库准备
 
-创建数据库和项目账号：
+项目根目录提供了数据库初始化脚本 `init-db.sql`。首次配置 MySQL 时，在项目根目录执行：
 
-```sql
-CREATE DATABASE IF NOT EXISTS medical_system
-DEFAULT CHARACTER SET utf8mb4
-COLLATE utf8mb4_unicode_ci;
-
-CREATE USER IF NOT EXISTS 'medical_user'@'localhost' IDENTIFIED BY '123456';
-
-ALTER USER 'medical_user'@'localhost' IDENTIFIED BY '123456';
-
-GRANT ALL PRIVILEGES ON medical_system.* TO 'medical_user'@'localhost';
-
-FLUSH PRIVILEGES;
+```powershell
+mysql -u root -p < init-db.sql
 ```
 
-在 `medical-system/src/main/resources/application.properties` 中配置数据库连接：
+执行时会要求输入 MySQL 的 root 密码。脚本会自动完成这些事情：
+
+- 创建 `medical_system` 数据库
+- 创建或更新 `medical_user` 用户
+- 将 `medical_user` 密码设置为 `123456`
+- 授权 `medical_user` 访问 `medical_system`
+- 创建 `patients`、`test_records`、`operation_logs` 三张表
+
+后端连接配置位于 `medical-system/src/main/resources/application.properties`：
 
 ```properties
 spring.datasource.url=jdbc:mysql://localhost:3306/medical_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
@@ -135,31 +133,7 @@ spring.datasource.username=medical_user
 spring.datasource.password=123456
 ```
 
-核心表：
-
-```sql
-CREATE TABLE patients (
-  id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  name VARCHAR(100) NOT NULL,
-  gender VARCHAR(10) NOT NULL,
-  age INT NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-
-CREATE TABLE test_records (
-  id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  patient_id BIGINT NOT NULL,
-  result VARCHAR(50) NOT NULL,
-  confidence DECIMAL(8,6),
-  tested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  remark VARCHAR(255),
-  CONSTRAINT fk_test_records_patient
-    FOREIGN KEY (patient_id) REFERENCES patients(id)
-);
-```
-
-操作记录表由后端启动后自动创建。
+如果要手动进入 MySQL 执行脚本内容，注意 `mysql>` 里面只能粘贴 SQL，不要粘贴 `mysql -u ...` 这种 PowerShell/CMD 命令。
 
 ## 模型文件
 
