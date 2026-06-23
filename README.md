@@ -65,6 +65,50 @@ Final_test_data/
 - Python 3.10+
 - MySQL 8+
 
+## 依赖安装
+
+### Python 模型服务
+
+Python 依赖写在 `python-api/requirements.txt` 中。建议在项目根目录创建虚拟环境：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+```
+
+安装依赖：
+
+```powershell
+python -m pip install -r python-api\requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126
+```
+
+当前 `requirements.txt` 中的 `torch` 和 `torchvision` 锁定的是 CUDA 12.6 版本。如果机器没有对应 CUDA 环境，需要把这两个依赖换成 CPU 版本或与你本机 CUDA 匹配的版本。
+
+模型服务启动依赖 `uvicorn`。如果启动时报 `No module named uvicorn`，执行：
+
+```powershell
+python -m pip install "uvicorn[standard]"
+```
+
+### Java 后端
+
+后端依赖由 Maven 自动管理，进入 `medical-system` 后运行 Maven 命令即可自动下载：
+
+```powershell
+cd medical-system
+mvn -q -DskipTests compile
+```
+
+### Vue 前端
+
+前端依赖由 npm 管理：
+
+```powershell
+cd medical-web
+npm.cmd install
+```
+
 ## 数据库准备
 
 创建数据库和项目账号：
@@ -133,6 +177,8 @@ TTST_SequenceTraining_checkpoint.pth
 
 ## 运行方式
 
+确认依赖、数据库、模型权重都准备好之后，再启动三个服务。
+
 ### 1. 启动 Python 模型服务
 
 ```powershell
@@ -177,7 +223,7 @@ http://localhost:5173
 
 根目录提供了 `start-dev.ps1`，用于开发时同时拉起三个服务。脚本不会打开多个新的终端窗口，而是在后台启动 Python、Java、Vue 三个进程，日志写入系统临时目录，当前 PowerShell 窗口负责显示状态和统一关闭服务。
 
-首次运行前仍需要先完成数据库、依赖和模型文件配置。
+注意：这个脚本只负责启动服务，不负责安装依赖、创建数据库或下载模型权重。首次运行前仍需要先完成前面的环境配置。
 
 ```powershell
 .\start-dev.ps1
