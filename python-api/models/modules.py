@@ -74,19 +74,32 @@ class Embeddings(nn.Module):
 		                               out_channels=config.hidden_size,
 		                               kernel_size=patch_size,
 		                               stride=patch_size)
+		self.mask_patch_embeddings = Conv2d(in_channels=in_channels,
+											out_channels=config.hidden_size,
+											kernel_size=patch_size,
+											stride=patch_size)
 		self.position_embeddings = nn.Parameter(torch.zeros(1, n_patches + 1, config.hidden_size))
 		self.cls_token = nn.Parameter(torch.zeros(1, 1, config.hidden_size))
+		self.use_mask = getattr(config, "use_mask", True)
 
 		self.dropout = Dropout(config.dropout_rate)
 
-	def forward(self, x):
+	def forward(self, x, mask=None):
 		B = x.shape[0]
 		cls_tokens = self.cls_token.expand(B, -1, -1)
+		mask_input = mask * x if self.use_mask and mask is not None else None
 
 		x = self.patch_embeddings(x)
 		x = x.flatten(2)
 		x = x.transpose(-1, -2)
 		x = torch.cat((cls_tokens, x), dim=1)
+
+		if mask_input is not None:
+			mask = self.mask_patch_embeddings(mask_input)
+			mask = mask.flatten(2)
+			mask = mask.transpose(-1, -2)
+			mask = torch.cat((cls_tokens, mask), dim=1)
+			x = x + mask
 
 		embeddings = x + self.position_embeddings
 		embeddings = self.dropout(embeddings)
@@ -117,8 +130,8 @@ class Transformer(nn.Module):
 		self.embeddings = Embeddings(config, img_size=img_size)
 		self.encoder = Encoder(config)
 
-	def forward(self, input_ids):
-		embedding_output = self.embeddings(input_ids)
+	def forward(self, input_ids, mask=None):
+		embedding_output = self.embeddings(input_ids, mask)
 		part_encoded = self.encoder(embedding_output)
 		return part_encoded
 

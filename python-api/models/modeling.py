@@ -143,14 +143,20 @@ class Embeddings(nn.Module):
                                        out_channels=config.hidden_size,
                                        kernel_size=patch_size,
                                        stride=patch_size)
+        self.mask_patch_embeddings = Conv2d(in_channels=in_channels,
+                                       out_channels=config.hidden_size,
+                                       kernel_size=patch_size,
+                                       stride=patch_size)
         self.position_embeddings = nn.Parameter(torch.zeros(1, n_patches+1, config.hidden_size))
         self.cls_token = nn.Parameter(torch.zeros(1, 1, config.hidden_size))
+        self.use_mask = getattr(config, "use_mask", True)
 
         self.dropout = Dropout(config.transformer["dropout_rate"])
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         B = x.shape[0]
         cls_tokens = self.cls_token.expand(B, -1, -1)
+        mask_input = mask * x if self.use_mask and mask is not None else None
 
         if self.hybrid:
             x = self.hybrid_model(x)
@@ -158,6 +164,13 @@ class Embeddings(nn.Module):
         x = x.flatten(2)
         x = x.transpose(-1, -2)
         x = torch.cat((cls_tokens, x), dim=1)
+
+        if mask_input is not None:
+            mask = self.mask_patch_embeddings(mask_input)
+            mask = mask.flatten(2)
+            mask = mask.transpose(-1, -2)
+            mask = torch.cat((cls_tokens, mask), dim=1)
+            x = x + mask
 
         embeddings = x + self.position_embeddings
         embeddings = self.dropout(embeddings)
@@ -249,7 +262,6 @@ class Encoder(nn.Module):
         self.vis = vis
         self.layer = nn.ModuleList()
         self.encoder_norm = LayerNorm(config.hidden_size, eps=1e-6)
-        print(config.transformer["num_layers"])
         for _ in range(config.transformer["num_layers"]):
             layer = Block(config, vis)
             self.layer.append(copy.deepcopy(layer))
@@ -272,7 +284,6 @@ class Time_Encoder(nn.Module):
         self.vis = vis
         self.layer = nn.ModuleList()
         self.encoder_norm = LayerNorm(config.hidden_size, eps=1e-6)
-        print(config.transformer["num_layers"])
         for _ in range(4):
             layer = Block(config, vis)
             self.layer.append(copy.deepcopy(layer))
@@ -293,7 +304,6 @@ class Space_Encoder(nn.Module):
         self.vis = vis
         self.layer = nn.ModuleList()
         self.encoder_norm = LayerNorm(config.hidden_size, eps=1e-6)
-        print(config.transformer["num_layers"])
         for _ in range(4):
             layer = Block(config, vis)
             self.layer.append(copy.deepcopy(layer))
@@ -313,8 +323,8 @@ class Transformer(nn.Module):
         self.embeddings = Embeddings(config, img_size=img_size)
         self.encoder = Encoder(config, vis)
 
-    def forward(self, input_ids):
-        embedding_output = self.embeddings(input_ids)   #input_ids(1, 3, 224, 224)  embedding_output(1, 197, 768)
+    def forward(self, input_ids, mask=None):
+        embedding_output = self.embeddings(input_ids, mask)   #input_ids(1, 3, 224, 224)  embedding_output(1, 197, 768)
         encoded, attn_weights = self.encoder(embedding_output)  #encoded(1, 197, 768)   attn_weights:list 12*(1,12,197,197)
         return encoded, attn_weights
 
@@ -343,7 +353,6 @@ class Sequence_Transformer(nn.Module):
         LGE_key_list = list(torch.split(LGE_key, 1))
         for index, value in enumerate(LGE_key_list):
             if torch.equal(value,torch.zeros_like(value)):
-                print("torch.equal(value,torch.zeros_like(value))**************************")
                 LGE_key_list[index] = x_list[index]
         LGE_key = torch.cat(LGE_key_list, dim=0)
 
@@ -392,7 +401,7 @@ class DSFI(nn.Module):
 
         self.head = Linear(config.hidden_size, num_classes)
 
-    def forward(self, x,LGE_key, labels=None):
+    def forward(self, x,LGE_key, labels=None, class_weights=None):
 
 
 
@@ -400,7 +409,7 @@ class DSFI(nn.Module):
         logits = self.head(x[:, 0])
 
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
+            loss_fct = CrossEntropyLoss(weight=class_weights)
             loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1))
             return loss
         else:
