@@ -84,7 +84,7 @@ function formatScore(value) {
         <thead>
           <tr>
             <th>patient_index</th>
-            <th>mace_score</th>
+            <th>mace_score（阳性概率）</th>
           </tr>
         </thead>
 

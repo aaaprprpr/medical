@@ -281,7 +281,7 @@ onBeforeUnmount(() => {
             <th>
               <button class="sortable-header" :class="{ active: sortState.sortBy === 'latestConfidence' }"
                 @click="changeSort('latestConfidence')">
-                <span>置信度</span>
+                <span>阳性概率</span>
                 <span class="sort-indicator">{{ getSortIcon('latestConfidence') }}</span>
               </button>
             </th>

@@ -282,7 +282,7 @@ async function saveDetectionRecord(patient, predictionResult) {
     window.dispatchEvent(new CustomEvent('patient-data-changed'))
     await safeCreateOperationLog({
         action: '影像检测',
-        detail: `${patient.name} 完成影像检测，结果：${formatResultLabel(predictionResult.result)}，置信度：${formatProbability(predictionResult.probability)}`
+        detail: `${patient.name} 完成影像检测，结果：${formatResultLabel(predictionResult.result)}，阳性概率：${formatProbability(predictionResult.probability)}`
     })
     saveMessage.value = `已保存到 ${patient.name} 的检测记录`
 }
@@ -412,7 +412,7 @@ function formatProbability(value) {
                 <p v-if="saveMessage" class="save-message">{{ saveMessage }}</p>
                 <h2>预测结果：</h2>
                 <p>判断：{{ formatResultLabel(result.result) }}</p>
-                <p>置信度：{{ formatProbability(result.probability) }}</p>
+                <p>阳性概率：{{ formatProbability(result.probability) }}</p>
             </div>
             <p v-if="errorMessage" class="error">{{ errorMessage }} </p>
 

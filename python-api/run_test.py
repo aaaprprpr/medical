@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 IMAGE_EXTENSIONS = {".bmp", ".jpg", ".jpeg", ".png", ".tif", ".tiff"}
-CLASS_TO_LABEL = {"mace_cine": 0, "no_mace": 1}
-LABEL_TO_CLASS = {0: "mace_cine", 1: "no_mace"}
+CLASS_TO_LABEL = {"no_mace": 0, "mace_cine": 1}
+LABEL_TO_CLASS = {0: "no_mace", 1: "mace_cine"}
 CLASS_NAME_ALIASES = {
     "mace": "mace_cine",
     "mace_cine": "mace_cine",
@@ -610,8 +610,8 @@ def infer_batch(args, batch, cine_model, lge_model, sequence_model):
 def format_result_rows(batch, logits, probabilities):
     rows = []
     for index, patient_id in enumerate(batch["patient_id"]):
-        prob_mace = float(probabilities[index, 0])
-        prob_no_mace = float(probabilities[index, 1])
+        prob_no_mace = float(probabilities[index, 0])
+        prob_mace = float(probabilities[index, 1])
         pred_label = int(torch.argmax(probabilities[index]).item())
         true_label = int(batch["label"][index].item())
         rows.append(
@@ -634,12 +634,11 @@ def format_result_rows(batch, logits, probabilities):
 
 
 def compact_result(row):
-    probability = max(row["prob_mace"], row["prob_no_mace"])
     return {
         "patient_id": row["patient_id"],
         "result": row["pred_class"],
         "pred_label": row["pred_label"],
-        "probability": probability,
+        "probability": row["prob_mace"],
         "prob_mace": row["prob_mace"],
         "prob_no_mace": row["prob_no_mace"],
         "has_lge": row["has_lge"],

@@ -209,7 +209,6 @@ def predict_patients(patients):
         lge_dir = patient["lge_dir"]
         mace_score = predictor.predict_patient(patient["cine_dir"], lge_dir)
         result = "mace_cine" if mace_score >= 0.5 else "no_mace"
-        probability = mace_score if result == "mace_cine" else 1.0 - mace_score
 
         rows.append(
             {
@@ -217,7 +216,8 @@ def predict_patients(patients):
                 "filename": patient["patient_id"],
                 "result": result,
                 "pred_label": 1 if result == "mace_cine" else 0,
-                "probability": probability,
+                "probability": mace_score,
+                "mace_score": mace_score,
                 "prob_mace": mace_score,
                 "prob_no_mace": 1.0 - mace_score,
                 "has_lge": lge_dir is not None,
