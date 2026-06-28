@@ -1,0 +1,17 @@
+*.png
+data/
+__pycache__/
+output
+logs
+run_logs
+diagnostics
+reports
+pretrained
+experiments
+
+
+PURE_SEQUENCE_RETRAIN_AUC823
+CMR-ARVC（任务1数据：不良事件风险预测）
+
+dataset
+TTST-main
